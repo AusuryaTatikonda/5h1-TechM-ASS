@@ -1,0 +1,255 @@
+// File: LibraryApplication.java 
+package com.library; 
+ 
+import org.springframework.boot.SpringApplication; 
+import org.springframework.boot.autoconfigure.SpringBootApplication; 
+ 
+@SpringBootApplication 
+public class LibraryApplication { 
+    public static void main(String[] args) { 
+        SpringApplication.run(LibraryApplication.class, args); 
+    } 
+} 
+ 
+// File: model/Book.java 
+package com.library.model; 
+ 
+import jakarta.persistence.*; 
+@Entity 
+public class Book { 
+@Id 
+@GeneratedValue(strategy = GenerationType.IDENTITY) 
+private Long bookId; 
+private String title; 
+private String author; 
+private String category; 
+private boolean availability = true; 
+// Getters and Setters 
+} 
+// File: model/User.java 
+package com.library.model; 
+import jakarta.persistence.*; 
+@Entity 
+public class User { 
+@Id 
+@GeneratedValue(strategy = GenerationType.IDENTITY) 
+private Long userId; 
+private String name; 
+private String membershipType; 
+// Getters and Setters 
+} 
+// File: model/Transaction.java 
+package com.library.model; 
+import jakarta.persistence.*; 
+import java.time.LocalDate; 
+@Entity 
+public class Transaction { 
+@Id 
+@GeneratedValue(strategy = GenerationType.IDENTITY) 
+private Long transactionId; 
+private Long bookId; 
+private Long userId; 
+private LocalDate issueDate; 
+private LocalDate returnDate; 
+private String status; // ISSUED, RETURNED, OVERDUE 
+// Getters and Setters 
+} 
+// File: repository/BookRepository.java 
+package com.library.repository; 
+import com.library.model.Book; 
+import org.springframework.data.jpa.repository.JpaRepository; 
+import java.util.List; 
+public interface BookRepository extends JpaRepository<Book, Long> { 
+List<Book> findByTitleContainingIgnoreCase(String title); 
+List<Book> findByAuthorContainingIgnoreCase(String author); 
+List<Book> findByCategoryContainingIgnoreCase(String category); 
+} 
+// File: repository/UserRepository.java 
+package com.library.repository; 
+import com.library.model.User; 
+import org.springframework.data.jpa.repository.JpaRepository; 
+public interface UserRepository extends JpaRepository<User, Long> {} 
+// File: repository/TransactionRepository.java 
+package com.library.repository; 
+import com.library.model.Transaction; 
+import org.springframework.data.jpa.repository.JpaRepository; 
+import java.util.List; 
+public interface TransactionRepository extends JpaRepository<Transaction, Long> { 
+List<Transaction> findByUserId(Long userId); 
+List<Transaction> findByStatus(String status); 
+} 
+// File: service/LibraryService.java 
+package com.library.service; 
+import com.library.model.Book; 
+import com.library.model.Transaction; 
+import com.library.model.User; 
+import com.library.repository.BookRepository; 
+import com.library.repository.TransactionRepository; 
+import com.library.repository.UserRepository; 
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.stereotype.Service; 
+import java.time.LocalDate; 
+import java.util.List; 
+ 
+@Service 
+public class LibraryService { 
+    @Autowired 
+    private BookRepository bookRepo; 
+ 
+    @Autowired 
+    private UserRepository userRepo; 
+ 
+    @Autowired 
+    private TransactionRepository transactionRepo; 
+ 
+    public Book addBook(Book book) { 
+        return bookRepo.save(book); 
+    } 
+ 
+    public void removeBook(Long bookId) { 
+        bookRepo.deleteById(bookId); 
+    } 
+ 
+    public User addUser(User user) { 
+        return userRepo.save(user); 
+    } 
+ 
+    public void removeUser(Long userId) { 
+        userRepo.deleteById(userId); 
+    } 
+ 
+    public Transaction issueBook(Long bookId, Long userId) { 
+        Book book = bookRepo.findById(bookId).orElseThrow(); 
+        if (!book.isAvailability()) throw new RuntimeException("Book not available"); 
+        book.setAvailability(false); 
+        bookRepo.save(book); 
+ 
+        Transaction tx = new Transaction(); 
+        tx.setBookId(bookId); 
+        tx.setUserId(userId); 
+        tx.setIssueDate(LocalDate.now()); 
+        tx.setStatus("ISSUED"); 
+        return transactionRepo.save(tx); 
+    } 
+ 
+    public Transaction returnBook(Long transactionId) { 
+        Transaction tx = transactionRepo.findById(transactionId).orElseThrow(); 
+        tx.setReturnDate(LocalDate.now()); 
+        tx.setStatus("RETURNED"); 
+ 
+        Book book = bookRepo.findById(tx.getBookId()).orElseThrow(); 
+        book.setAvailability(true); 
+        bookRepo.save(book); 
+        return transactionRepo.save(tx); 
+    } 
+ 
+    public List<Book> searchBooks(String keyword) { 
+        return bookRepo.findByTitleContainingIgnoreCase(keyword); 
+    } 
+ 
+    public List<Transaction> getOverdueTransactions() { 
+        return transactionRepo.findByStatus("OVERDUE"); 
+    } 
+ 
+    public List<Transaction> getUserTransactions(Long userId) { 
+        return transactionRepo.findByUserId(userId); 
+    } 
+} 
+ 
+// File: controller/LibraryController.java 
+package com.library.controller; 
+import com.library.model.Book; 
+import com.library.model.Transaction; 
+import com.library.model.User; 
+import com.library.service.LibraryService; 
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.security.access.prepost.PreAuthorize; 
+import org.springframework.web.bind.annotation.*; 
+import java.util.List; 
+@RestController 
+@RequestMapping("/library") 
+public class LibraryController { 
+@Autowired 
+private LibraryService service; 
+@PostMapping("/book") 
+@PreAuthorize("hasRole('LIBRARIAN')") 
+public Book addBook(@RequestBody Book book) { 
+return service.addBook(book); 
+} 
+@DeleteMapping("/book/{id}") 
+@PreAuthorize("hasRole('LIBRARIAN')") 
+public void removeBook(@PathVariable Long id) { 
+service.removeBook(id); 
+} 
+@PostMapping("/user") 
+@PreAuthorize("hasRole('LIBRARIAN')") 
+public User addUser(@RequestBody User user) { 
+return service.addUser(user); 
+} 
+ 
+    @DeleteMapping("/user/{id}") 
+    @PreAuthorize("hasRole('LIBRARIAN')") 
+    public void removeUser(@PathVariable Long id) { 
+        service.removeUser(id); 
+    } 
+ 
+    @PostMapping("/issue") 
+    @PreAuthorize("hasRole('LIBRARIAN')") 
+    public Transaction issueBook(@RequestParam Long bookId, @RequestParam Long userId) { 
+        return service.issueBook(bookId, userId); 
+    } 
+ 
+    @PostMapping("/return/{transactionId}") 
+    @PreAuthorize("hasRole('LIBRARIAN')") 
+    public Transaction returnBook(@PathVariable Long transactionId) { 
+        return service.returnBook(transactionId); 
+    } 
+ 
+    @GetMapping("/search") 
+    public List<Book> search(@RequestParam String keyword) { 
+        return service.searchBooks(keyword); 
+    } 
+ 
+    @GetMapping("/reports/overdue") 
+    @PreAuthorize("hasRole('LIBRARIAN')") 
+    public List<Transaction> getOverdues() { 
+        return service.getOverdueTransactions(); 
+    } 
+ 
+    @GetMapping("/reports/user/{userId}") 
+    @PreAuthorize("hasRole('LIBRARIAN')") 
+    public List<Transaction> getUserHistory(@PathVariable Long userId) { 
+        return service.getUserTransactions(userId); 
+    } 
+} 
+ 
+// File: config/SecurityConfig.java 
+package com.library.config; 
+ 
+import org.springframework.context.annotation.Bean; 
+import org.springframework.context.annotation.Configuration; 
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity; 
+import org.springframework.security.config.annotation.web.builders.HttpSecurity; 
+import org.springframework.security.core.userdetails.User; 
+import org.springframework.security.core.userdetails.UserDetailsService; 
+import org.springframework.security.provisioning.InMemoryUserDetailsManager; 
+import org.springframework.security.web.SecurityFilterChain; 
+ 
+@Configuration 
+@EnableMethodSecurity 
+public class SecurityConfig { 
+    @Bean 
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception { 
+        http.csrf().disable() 
+            .authorizeHttpRequests(auth -> auth.anyRequest().authenticated()) 
+            .httpBasic(); 
+        return http.build(); 
+    } 
+ 
+    @Bean 
+    public UserDetailsService users() { 
+        return new InMemoryUserDetailsManager( 
+            User.withUsername("librarian").password("{noop}lib123").roles("LIBRARIAN").build() 
+        ); 
+    } 
+} 
