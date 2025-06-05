@@ -1,0 +1,146 @@
+// File: EmployeeAttendanceTrackerApplication.java 
+package com.attendance; 
+import org.springframework.boot.SpringApplication; 
+import org.springframework.boot.autoconfigure.SpringBootApplication; 
+@SpringBootApplication 
+public class EmployeeAttendanceTrackerApplication { 
+public static void main(String[] args) { 
+SpringApplication.run(EmployeeAttendanceTrackerApplication.class, args); 
+} 
+} 
+// File: model/Employee.java 
+package com.attendance.model; 
+import jakarta.persistence.*; 
+@Entity 
+public class Employee { 
+@Id 
+private Long employeeId; 
+private String name; 
+private String department; 
+private String designation; 
+@Enumerated(EnumType.STRING) 
+private Role role; 
+public enum Role { 
+EMPLOYEE, MANAGER 
+} 
+} 
+// Getters and setters 
+// File: model/Attendance.java 
+package com.attendance.model; 
+import jakarta.persistence.*; 
+import java.time.LocalDate; 
+@Entity 
+public class Attendance { 
+@Id 
+@GeneratedValue(strategy = GenerationType.IDENTITY) 
+private Long attendanceId; 
+private Long employeeId; 
+private LocalDate date; 
+@Enumerated(EnumType.STRING) 
+private Status status; 
+public enum Status { 
+PRESENT, ABSENT 
+} 
+// Getters and setters 
+} 
+// File: repository/EmployeeRepository.java 
+package com.attendance.repository; 
+import com.attendance.model.Employee; 
+import org.springframework.data.jpa.repository.JpaRepository; 
+public interface EmployeeRepository extends JpaRepository<Employee, Long> { 
+} 
+// File: repository/AttendanceRepository.java 
+package com.attendance.repository; 
+import com.attendance.model.Attendance; 
+import org.springframework.data.jpa.repository.JpaRepository; 
+import java.time.LocalDate; 
+import java.util.List; 
+public interface AttendanceRepository extends JpaRepository<Attendance, Long> { 
+List<Attendance> findByEmployeeId(Long employeeId); 
+List<Attendance> findByDate(LocalDate date); 
+} 
+// File: service/AttendanceService.java 
+package com.attendance.service; 
+import com.attendance.model.Attendance; 
+import com.attendance.repository.AttendanceRepository; 
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.stereotype.Service; 
+import java.time.LocalDate; 
+import java.util.List; 
+@Service 
+public class AttendanceService { 
+@Autowired 
+private AttendanceRepository attendanceRepository; 
+public Attendance markAttendance(Long employeeId, Attendance.Status status) { 
+Attendance attendance = new Attendance(); 
+attendance.setEmployeeId(employeeId); 
+attendance.setDate(LocalDate.now()); 
+attendance.setStatus(status); 
+return attendanceRepository.save(attendance); 
+} 
+public List<Attendance> getAttendanceByEmployee(Long employeeId) { 
+return attendanceRepository.findByEmployeeId(employeeId); 
+} 
+} 
+// File: controller/AttendanceController.java 
+package com.attendance.controller; 
+import com.attendance.model.Attendance; 
+import com.attendance.service.AttendanceService; 
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.security.access.prepost.PreAuthorize; 
+import org.springframework.web.bind.annotation.*; 
+import java.security.Principal; 
+import java.util.List; 
+@RestController 
+@RequestMapping("/attendance") 
+public class AttendanceController { 
+@Autowired 
+private AttendanceService attendanceService; 
+@PostMapping("/mark") 
+@PreAuthorize("hasRole('EMPLOYEE')") 
+public Attendance mark(@RequestParam Attendance.Status status, Principal principal) { 
+Long employeeId = Long.parseLong(principal.getName()); 
+        return attendanceService.markAttendance(employeeId, status); 
+    } 
+ 
+    @GetMapping("/me") 
+    @PreAuthorize("hasRole('EMPLOYEE')") 
+    public List<Attendance> myAttendance(Principal principal) { 
+        Long employeeId = Long.parseLong(principal.getName()); 
+        return attendanceService.getAttendanceByEmployee(employeeId); 
+    } 
+} 
+ 
+// File: config/SecurityConfig.java 
+package com.attendance.config; 
+ 
+import org.springframework.context.annotation.Bean; 
+import org.springframework.context.annotation.Configuration; 
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity; 
+import org.springframework.security.config.annotation.web.builders.HttpSecurity; 
+import org.springframework.security.core.userdetails.User; 
+import org.springframework.security.core.userdetails.UserDetailsService; 
+import org.springframework.security.provisioning.InMemoryUserDetailsManager; 
+import org.springframework.security.web.SecurityFilterChain; 
+ 
+@Configuration 
+@EnableMethodSecurity 
+public class SecurityConfig { 
+    @Bean 
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception { 
+        return http.csrf().disable() 
+                .authorizeHttpRequests(auth -> auth 
+                        .anyRequest().authenticated() 
+                ) 
+                .httpBasic() 
+                .and().build(); 
+    } 
+ 
+    @Bean 
+    public UserDetailsService users() { 
+        return new InMemoryUserDetailsManager( 
+                User.withUsername("1001").password("{noop}pass123").roles("EMPLOYEE").build(), 
+                User.withUsername("2001").password("{noop}admin123").roles("MANAGER").build() 
+        ); 
+    } 
+} 
