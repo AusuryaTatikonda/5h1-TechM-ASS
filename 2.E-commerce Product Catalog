@@ -1,0 +1,189 @@
+// File: EcommerceApplication.java 
+package com.ecommerce; 
+ 
+import org.springframework.boot.SpringApplication; 
+import org.springframework.boot.autoconfigure.SpringBootApplication; 
+ 
+@SpringBootApplication 
+public class EcommerceApplication { 
+    public static void main(String[] args) { 
+        SpringApplication.run(EcommerceApplication.class, args); 
+    } 
+} 
+ 
+// File: model/Product.java 
+package com.ecommerce.model; 
+ 
+import jakarta.persistence.*; 
+@Entity 
+public class Product { 
+@Id 
+@GeneratedValue(strategy = GenerationType.IDENTITY) 
+private Long productId; 
+private String name; 
+private String description; 
+private double price; 
+private String category; 
+private int stockQuantity; 
+// Getters and Setters 
+} 
+// File: repository/ProductRepository.java 
+package com.ecommerce.repository; 
+import com.ecommerce.model.Product; 
+import org.springframework.data.jpa.repository.JpaRepository; 
+import org.springframework.data.jpa.repository.Query; 
+import java.util.List; 
+public interface ProductRepository extends JpaRepository<Product, Long> { 
+List<Product> findByCategory(String category); 
+List<Product> findByPriceBetween(double min, double max); 
+List<Product> findByNameContainingIgnoreCase(String name); 
+@Query("SELECT p FROM Product p WHERE (:category IS NULL OR p.category = :category) AND (p.price BETWEEN 
+:minPrice AND :maxPrice)") 
+List<Product> filterProducts(String category, double minPrice, double maxPrice); 
+} 
+ 
+// File: service/ProductService.java 
+package com.ecommerce.service; 
+ 
+import com.ecommerce.model.Product; 
+import com.ecommerce.repository.ProductRepository; 
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.stereotype.Service; 
+ 
+import java.util.List; 
+import java.util.Optional; 
+ 
+@Service 
+public class ProductService { 
+    @Autowired 
+    private ProductRepository productRepository; 
+ 
+    public Product addProduct(Product product) { 
+        return productRepository.save(product); 
+    } 
+ 
+    public Product updateProduct(Long id, Product updatedProduct) { 
+        Optional<Product> optionalProduct = productRepository.findById(id); 
+        if (optionalProduct.isPresent()) { 
+            Product product = optionalProduct.get(); 
+            product.setName(updatedProduct.getName()); 
+            product.setDescription(updatedProduct.getDescription()); 
+            product.setPrice(updatedProduct.getPrice()); 
+            product.setCategory(updatedProduct.getCategory()); 
+            product.setStockQuantity(updatedProduct.getStockQuantity()); 
+            return productRepository.save(product); 
+        } else { 
+            throw new RuntimeException("Product not found"); 
+        } 
+    } 
+ 
+    public void deleteProduct(Long id) { 
+        productRepository.deleteById(id); 
+    } 
+ 
+    public List<Product> getAllProducts() { 
+        return productRepository.findAll(); 
+    } 
+ 
+    public List<Product> filterByCategory(String category) { 
+        return productRepository.findByCategory(category); 
+    } 
+ 
+    public List<Product> filterByPriceRange(double min, double max) { 
+        return productRepository.findByPriceBetween(min, max); 
+    } 
+ 
+    public List<Product> searchByName(String name) { 
+        return productRepository.findByNameContainingIgnoreCase(name); 
+    } 
+} 
+ 
+// File: controller/ProductController.java 
+package com.ecommerce.controller; 
+ 
+import com.ecommerce.model.Product; 
+import com.ecommerce.service.ProductService; 
+import org.springframework.beans.factory.annotation.Autowired; 
+import org.springframework.security.access.prepost.PreAuthorize; 
+import org.springframework.web.bind.annotation.*; 
+ 
+import java.util.List; 
+ 
+@RestController 
+@RequestMapping("/products") 
+public class ProductController { 
+    @Autowired 
+    private ProductService productService; 
+ 
+    @PostMapping("/add") 
+    @PreAuthorize("hasRole('ADMIN')") 
+    public Product addProduct(@RequestBody Product product) { 
+        return productService.addProduct(product); 
+    } 
+ 
+    @PutMapping("/update/{id}") 
+    @PreAuthorize("hasRole('ADMIN')") 
+    public Product updateProduct(@PathVariable Long id, @RequestBody Product product) { 
+        return productService.updateProduct(id, product); 
+    } 
+ 
+    @DeleteMapping("/delete/{id}") 
+    @PreAuthorize("hasRole('ADMIN')") 
+    public void deleteProduct(@PathVariable Long id) { 
+        productService.deleteProduct(id); 
+    } 
+ 
+    @GetMapping 
+    public List<Product> getAllProducts() { 
+        return productService.getAllProducts(); 
+    } 
+ 
+    @GetMapping("/category/{category}") 
+    public List<Product> getByCategory(@PathVariable String category) { 
+        return productService.filterByCategory(category); 
+    } 
+ 
+    @GetMapping("/price") 
+    public List<Product> getByPriceRange(@RequestParam double min, @RequestParam double max) { 
+        return productService.filterByPriceRange(min, max); 
+    } 
+ 
+    @GetMapping("/search") 
+    public List<Product> searchByName(@RequestParam String name) { 
+        return productService.searchByName(name); 
+    } 
+} 
+ 
+// File: config/SecurityConfig.java 
+package com.ecommerce.config; 
+ 
+import org.springframework.context.annotation.Bean; 
+import org.springframework.context.annotation.Configuration; 
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity; 
+import org.springframework.security.config.annotation.web.builders.HttpSecurity; 
+import org.springframework.security.core.userdetails.User; 
+import org.springframework.security.core.userdetails.UserDetailsService; 
+import org.springframework.security.provisioning.InMemoryUserDetailsManager; 
+import org.springframework.security.web.SecurityFilterChain; 
+ 
+@Configuration 
+@EnableMethodSecurity 
+public class SecurityConfig { 
+    @Bean 
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception { 
+        return http.csrf().disable() 
+                .authorizeHttpRequests(auth -> auth 
+                        .anyRequest().authenticated() 
+                ) 
+                .httpBasic() 
+                .and().build(); 
+    } 
+ 
+    @Bean 
+    public UserDetailsService users() { 
+        return new InMemoryUserDetailsManager( 
+                User.withUsername("admin").password("{noop}admin123").roles("ADMIN").build(), 
+                User.withUsername("user").password("{noop}user123").roles("USER").build() 
+        ); 
+    } 
+}
